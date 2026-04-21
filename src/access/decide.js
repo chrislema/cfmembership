@@ -7,13 +7,15 @@ export async function decideAccess(request, env, ctx) {
 
   const rules = await loadRules(env, ctx);
   const rule = selectRule(rules, url.pathname);
-  if (!rule) return { type: 'allow' };
+  const session = await readSession(request, env, ctx);
+  const memberId = session?.memberId ?? null;
+
+  if (!rule) return { type: 'allow', memberId };
 
   if (rule.allowed_plan_ids.length === 0) {
     return { type: 'deny', reason: 'rule-has-no-plans' };
   }
 
-  const session = await readSession(request, env, ctx);
   if (session) {
     const memberPlans = await getActivePlanIds(env.DB, session.memberId);
     const hasAccess = rule.allowed_plan_ids.some((id) =>
@@ -32,7 +34,7 @@ export async function decideAccess(request, env, ctx) {
   return {
     type: 'redirect',
     url: redirectUrl,
-    memberId: session?.memberId ?? null,
+    memberId,
   };
 }
 

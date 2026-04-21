@@ -77,10 +77,18 @@ describe('getRedirectUrlForPlans', () => {
 });
 
 describe('decideAccess', () => {
-  it('allows a request against an unprotected path', async () => {
+  it('allows a request against an unprotected path with no session', async () => {
     expect(await decideAccess(requestFor('/about'), env)).toEqual({
       type: 'allow',
+      memberId: null,
     });
+  });
+
+  it('includes the memberId on an unprotected path when a session is present', async () => {
+    await insertMember(7);
+    const { cookie } = await createSession(env, 7);
+    const decision = await decideAccess(requestFor('/about', { cookie }), env);
+    expect(decision).toEqual({ type: 'allow', memberId: 7 });
   });
 
   it('redirects an anonymous visitor hitting a protected path', async () => {

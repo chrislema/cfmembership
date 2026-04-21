@@ -3,6 +3,7 @@ import { escapeHtml, htmlResponse, redirectResponse } from '../util/html.js';
 import { createMagicLink } from '../auth/magic-link.js';
 import { sendEmail } from '../email/send.js';
 import { getConfig } from '../config.js';
+import { getRecentPages } from '../tracking/pageview.js';
 
 export async function handleMembers(request, env) {
   const url = new URL(request.url);
@@ -113,6 +114,20 @@ async function detail(env, id, flashKey) {
       )
       .join('') || '<tr><td colspan="3">No memberships.</td></tr>';
 
+  const recent = await getRecentPages(env, id);
+  const recentRows =
+    recent
+      .slice()
+      .reverse()
+      .map(
+        (r) => `
+      <tr>
+        <td>${escapeHtml(r.path)}</td>
+        <td>${new Date(r.at).toISOString()}</td>
+      </tr>`
+      )
+      .join('') || '<tr><td colspan="2">No pageviews yet.</td></tr>';
+
   const compForm = activePlans.length
     ? `
     <form method="post" action="/admin/members/${id}/comp">
@@ -144,6 +159,11 @@ async function detail(env, id, flashKey) {
     <table>
       <thead><tr><th>Plan</th><th>Status</th><th>Source</th></tr></thead>
       <tbody>${msRows}</tbody>
+    </table>
+    <h2>Recent pages (last 20)</h2>
+    <table>
+      <thead><tr><th>Path</th><th>When</th></tr></thead>
+      <tbody>${recentRows}</tbody>
     </table>
     <h2>Actions</h2>
     <div class="row-actions">

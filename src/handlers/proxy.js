@@ -1,5 +1,6 @@
 import { decideAccess } from '../access/decide.js';
 import { getConfig } from '../config.js';
+import { trackPageview } from '../tracking/pageview.js';
 
 export async function handleProxy(request, env, ctx) {
   const decision = await decideAccess(request, env, ctx);
@@ -16,6 +17,17 @@ export async function handleProxy(request, env, ctx) {
       status: 403,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     });
+  }
+
+  if (decision.memberId) {
+    const url = new URL(request.url);
+    const work = trackPageview(
+      env,
+      decision.memberId,
+      url.pathname + url.search
+    );
+    if (ctx?.waitUntil) ctx.waitUntil(work);
+    else await work;
   }
 
   return fetchFromOrigin(request, env);
