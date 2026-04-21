@@ -18,7 +18,7 @@ CFMembership is a third option: a small, readable codebase that runs on infrastr
 
 ## Who it is for
 
-The site owner is someone who is comfortable deploying to Cloudflare, or willing to learn. They want a membership site, not a content management system. They already have a way to author content — maybe a static site generator, maybe a headless CMS, maybe markdown in a repo, maybe they write HTML by hand. CFMembership does not care. It sits in front of the site as a routing layer and applies access rules based on URLs.
+The site owner is someone who is comfortable deploying to Cloudflare, or willing to learn. They want a membership site, not a content management system. They already have a way to author content — maybe a static site generator, maybe a headless CMS, maybe markdown in a repo, maybe they write HTML by hand. CFMembership does not care. It sits in front of the site as a reverse proxy on Cloudflare Workers and applies access rules based on URLs. The owner's existing site keeps working exactly as it did; CFMembership intercepts requests on the way in and decides what to do with them.
 
 The end member is someone who signs up because they hit a page they wanted to read, got redirected to a paywall, liked the offer, and paid. They log in with magic links. They never have a password.
 
@@ -32,9 +32,52 @@ The end member is someone who signs up because they hit a page they wanted to re
 
 **Plan-owned redirects.** When someone without access hits a protected URL, they are redirected to the URL configured on the plan that gates the content. That redirect is, in practice, a sales page for the plan — a pitch plus a signup button. The site owner builds this page themselves; it is just another URL on the site. This means every paywall is a custom pitch for a specific offer, not a generic "please log in" screen.
 
-**Cloudflare-native storage.** D1 holds the core relational data: members, plans, access rules, subscriptions, payment history. KV holds ephemeral and performance-sensitive data: active sessions, recent-page ring buffers, rate limit counters. Static site assets are served by the Worker. No external database, no external cache, no external session store.
+**Cloudflare-native storage.** D1 holds the core relational data: members, plans, access rules, subscriptions, payment history. KV holds ephemeral and performance-sensitive data: active sessions, recent-page ring buffers, rate limit counters, cached rule lookups. The Worker proxies page content from a configured origin, or serves it directly from Workers Assets when the owner co-locates their site in the CFMembership deployment. No external database, no external cache, no external session store.
 
 **Pluggable email through a thin adapter contract.** Every transactional email goes through an adapter. The default is Cloudflare's outbound email feature. Resend and Kit (ConvertKit) are the other v1 adapters. The contract is minimal enough that community adapters for Postmark, Mailgun, SendGrid, or whatever else should take an afternoon to write. The Kit adapter also implements list sync so plan membership stays reflected in tags.
+
+## Deployment topology
+
+CFMembership is a reverse proxy. The owner's domain points at the Worker, and every request — for a public page, a protected page, an admin route, a Stripe webhook — arrives at the Worker first. The Worker decides what to do.
+
+```
+┌─────────┐     ┌──────────────────────┐     ┌─────────────┐
+│ Visitor │ ──▶ │ CFMembership Worker  │ ──▶ │   Origin    │
+└─────────┘     │                      │     │  (your site)│
+                │ • match access rule  │     └─────────────┘
+                │ • check session      │
+                │ • allow / redirect   │
+                │ • proxy to origin    │
+                │                      │
+                │ /admin  /webhooks/*  │
+                │ handled locally      │
+                └──────────────────────┘
+                         │
+                 ┌───────┴────────┐
+                 ▼                ▼
+              ┌────┐          ┌────┐
+              │ D1 │          │ KV │
+              └────┘          └────┘
+```
+
+For a normal page request, the flow is:
+
+1. Request arrives at the Worker
+2. Worker checks if the path is reserved (`/admin`, `/webhooks/*`, `/auth/*`) — if so, handles it locally and returns
+3. Otherwise, Worker looks up the URL in access rules (with a KV-cached lookup for speed)
+4. If public, Worker fetches from the origin and returns the response unchanged
+5. If protected and the requester holds a matching plan, same as above — fetch and return
+6. If protected and the requester does not have access, Worker returns a 302 to the plan's redirect URL (which is itself on the same domain and will flow through the Worker again on the redirect, where it will be public and get proxied)
+
+The Worker never modifies page HTML. It does not inject scripts. It does not do client-side checks. Access decisions happen server-side before any content is served, which means disabling JavaScript, using curl, or viewing source cannot bypass a paywall. The only thing the Worker adds to the response is a session cookie on auth events.
+
+### Two variants of the same pattern
+
+**Variant A — External origin (default).** The owner configures an origin URL in the admin. Their content lives on Cloudflare Pages, Netlify, Vercel, a VPS, an S3 bucket, or anywhere else reachable over HTTPS. The Worker proxies to it. This is the expected path for anyone with a CMS, a static site generator they already use, or an existing site they want to front without migrating.
+
+**Variant B — Co-located static assets.** For owners whose content is simple — markdown-in-a-repo, hand-authored HTML, a folder of pages — CFMembership can serve the content directly from a `public/` directory using Cloudflare Workers Assets. No origin URL, no second deployment. The owner commits their pages to the CFMembership repo (or more typically, a fork) and `wrangler deploy` ships both the membership logic and the site together.
+
+Both variants run the same Worker code and the same access rule engine. The only difference is where the Worker fetches content from when access is granted: a remote origin, or the local asset bundle. The admin has a single configuration toggle for which mode is active.
 
 ## The access model in detail
 
@@ -74,6 +117,7 @@ The admin is a set of authenticated routes within the Worker. It is available on
 
 The admin provides:
 
+- **Site configuration.** Set the origin mode — external origin URL (Variant A) or co-located assets (Variant B) — and the origin URL itself when applicable. Set the owner email. Paste the Stripe API key and webhook signing secret.
 - **Plans management.** Create, edit, deactivate plans. Set price, billing interval, and redirect URL per plan. Saving a plan syncs it to Stripe.
 - **Access rules management.** Define URL patterns and which plans can access them. See all rules in one view, ordered by specificity.
 - **Members list.** Paginated, searchable by email.
@@ -111,7 +155,7 @@ Additional adapters — Postmark, Mailgun, SendGrid, Mailchimp, others — are e
 - `access_rules` — id, url_pattern, pattern_type (exact, prefix), sort_order
 - `access_rule_plans` — rule_id, plan_id (many-to-many)
 - `payments` — id, member_id, stripe_charge_id, amount_cents, status, created_at
-- `admin_config` — singleton key-value for settings (Stripe key, active email adapter, adapter config, owner email)
+- `admin_config` — singleton key-value for settings (origin mode, origin URL, owner email, Stripe key, Stripe webhook secret, active email adapter, adapter config)
 
 **KV namespaces:**
 
@@ -144,13 +188,15 @@ This is small enough that a new contributor can hold the entire schema in their 
 
 *URLs are the primary interface.* Access control, redirects, paywalls, post-signup landing — all expressed as URLs the owner already owns on their own site.
 
+*Enforcement is server-side.* Access decisions happen in the Worker before content is served. No client-side checks, no JavaScript injection, no HTML rewriting. Disabling JavaScript or using curl cannot bypass a paywall, because the content was never sent.
+
 *The admin is boring.* Server-rendered HTML forms. Tables. Buttons that do one thing. No dashboards that look like a SaaS product. The admin is a tool, not a product.
 
 *Plugins are directories, not frameworks.* Drop a file in `adapters/email/`, export the right shape, register it in config. That is the entire plugin story.
 
 ## Success criteria
 
-A site owner should be able to go from `git clone` to a working membership site, with one plan, one Stripe integration, and one protected URL, in under an hour — including the Cloudflare account setup if they do not already have one.
+A site owner should be able to go from `git clone` to a working membership site, with one plan, one Stripe integration, their origin URL configured, and one protected URL, in under an hour — including the Cloudflare account setup if they do not already have one.
 
 A developer reading the codebase for the first time should be able to locate any feature — how magic links work, how rules match, how Stripe webhooks are processed — in under five minutes.
 
@@ -160,6 +206,7 @@ The whole system should run for a typical membership site (thousands of members,
 
 ## What v1 ships
 
+- Reverse-proxy architecture with two deployment variants (external origin, co-located assets)
 - Magic-link authentication
 - Plan management with Stripe sync
 - Access rules with exact-and-prefix matching
