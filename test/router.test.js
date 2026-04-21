@@ -1,9 +1,14 @@
 import { SELF } from 'cloudflare:test';
-import { describe, it, expect } from 'vitest';
+import { beforeAll, describe, it, expect } from 'vitest';
+import { applySchema } from './helpers/db.js';
 
 async function body(res) {
   return (await res.text()).trim();
 }
+
+beforeAll(async () => {
+  await applySchema();
+});
 
 describe('request router', () => {
   it('dispatches /setup to the setup handler', async () => {
@@ -39,15 +44,17 @@ describe('request router', () => {
     expect(await body(res)).toBe('cfmembership:webhooks');
   });
 
-  it('sends everything else to the proxy handler', async () => {
+  it('sends everything else to the proxy handler (503 until origin is set)', async () => {
     for (const path of ['/', '/about', '/blog/post-1', '/members/premium/x']) {
-      const res = await SELF.fetch(`https://example.com${path}`);
-      expect(await body(res)).toBe('cfmembership:proxy');
+      const res = await SELF.fetch(`https://example.com${path}`, {
+        redirect: 'manual',
+      });
+      expect(res.status).toBe(503);
     }
   });
 
   it('does not confuse /admin-like paths with /admin', async () => {
     const res = await SELF.fetch('https://example.com/administrative');
-    expect(await body(res)).toBe('cfmembership:proxy');
+    expect(res.status).toBe(503);
   });
 });
