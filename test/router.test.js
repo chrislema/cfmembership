@@ -33,8 +33,8 @@ describe('request router', () => {
   });
 
   it('dispatches /auth/* to the auth handler', async () => {
-    const res = await SELF.fetch('https://example.com/auth/magic');
-    expect(await body(res)).toBe('cfmembership:auth');
+    const res = await SELF.fetch('https://example.com/auth/callback');
+    expect(res.status).toBe(400);
   });
 
   it('dispatches /webhooks/* to the webhooks handler', async () => {
