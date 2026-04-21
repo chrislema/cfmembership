@@ -5,6 +5,8 @@ import {
   parseSessionCookie,
   buildClearSessionCookie,
 } from '../auth/session.js';
+import { sendEmail } from '../email/send.js';
+import { getConfig } from '../config.js';
 
 export async function handleAuth(request, env, ctx) {
   const url = new URL(request.url);
@@ -46,10 +48,21 @@ async function handleMagicLinkRequest(request, env, ctx) {
   }
   const email = raw.trim().toLowerCase();
 
-  await createMagicLink(env, email);
-  // TODO: dispatch the link through the configured email adapter.
-  // The response is deliberately the same whether or not a token was
-  // minted, so the endpoint cannot be used to enumerate members.
+  const result = await createMagicLink(env, email);
+  if (result.sent) {
+    const origin = new URL(request.url).origin;
+    const link = `${origin}/auth/callback?token=${result.token}`;
+    const siteName = (await getConfig(env.DB, 'site_name')) ?? 'CFMembership';
+    try {
+      await sendEmail(env, {
+        to: email,
+        template: 'magic-link',
+        variables: { link, site_name: siteName },
+      });
+    } catch (err) {
+      console.error('magic-link send failed', err);
+    }
+  }
 
   return new Response('If that email is registered, check your inbox.', {
     status: 200,
