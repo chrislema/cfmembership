@@ -31,3 +31,9 @@ id = "YOUR_RULE_CACHE_KV_ID"
 # [assets]
 # directory = "./public"
 # binding = "ASSETS"
+
+# Uncomment to use the Cloudflare Email adapter for outbound mail.
+# Requires a verified destination address in the Cloudflare dashboard.
+# [[send_email]]
+# name = "EMAIL"
+# destination_address = "owner@your-domain.com"

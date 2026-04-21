@@ -9,6 +9,7 @@ const EDITABLE_KEYS = [
   'email_adapter',
   'email_from',
   'resend_api_key',
+  'kit_api_key',
 ];
 
 export async function handleConfig(request, env) {
@@ -63,7 +64,9 @@ function renderForm(c) {
         <label for="email_adapter">Adapter</label>
         <select id="email_adapter" name="email_adapter">
           <option value="dev"${adapter === 'dev' ? ' selected' : ''}>dev (in-memory, no send)</option>
+          <option value="cloudflare"${adapter === 'cloudflare' ? ' selected' : ''}>Cloudflare Email</option>
           <option value="resend"${adapter === 'resend' ? ' selected' : ''}>Resend</option>
+          <option value="kit"${adapter === 'kit' ? ' selected' : ''}>Kit (ConvertKit)</option>
         </select>
       </div>
       <div class="field">
@@ -74,6 +77,11 @@ function renderForm(c) {
         <label for="resend_api_key">Resend API key</label>
         <input id="resend_api_key" name="resend_api_key" type="text" value="${escapeHtml(c.resend_api_key)}">
         <div class="hint">Only used when the adapter is Resend.</div>
+      </div>
+      <div class="field">
+        <label for="kit_api_key">Kit API key</label>
+        <input id="kit_api_key" name="kit_api_key" type="text" value="${escapeHtml(c.kit_api_key)}">
+        <div class="hint">Only used when the adapter is Kit.</div>
       </div>
       <div class="field">
         <button type="submit">Save</button>

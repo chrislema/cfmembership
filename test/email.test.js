@@ -12,6 +12,9 @@ import { setConfig } from '../src/config.js';
 import { renderTemplate } from '../src/email/templates.js';
 import { createDevAdapter, devMailbox, resetDevMailbox } from '../src/email/adapters/dev.js';
 import { createResendAdapter } from '../src/email/adapters/resend.js';
+import { createCloudflareAdapter } from '../src/email/adapters/cloudflare.js';
+import { createKitAdapter } from '../src/email/adapters/kit.js';
+import { buildMimeMessage } from '../src/email/mime.js';
 import { getAdapter } from '../src/email/registry.js';
 import { sendEmail } from '../src/email/send.js';
 
@@ -139,9 +142,207 @@ describe('getAdapter registry', () => {
     expect(adapter.name).toBe('resend');
   });
 
+  it('returns a kit adapter when configured', async () => {
+    await setConfig(env.DB, 'email_adapter', 'kit');
+    await setConfig(env.DB, 'kit_api_key', 'kit-test-key');
+    await setConfig(env.DB, 'email_from', 'no-reply@acme.test');
+    const adapter = await getAdapter(env);
+    expect(adapter.name).toBe('kit');
+  });
+
+  it('throws for cloudflare mode when the EMAIL binding is missing', async () => {
+    await setConfig(env.DB, 'email_adapter', 'cloudflare');
+    await setConfig(env.DB, 'email_from', 'no-reply@acme.test');
+    await expect(getAdapter(env)).rejects.toThrow(/EMAIL binding/);
+  });
+
   it('throws for an unsupported adapter name', async () => {
     await setConfig(env.DB, 'email_adapter', 'imaginary');
     await expect(getAdapter(env)).rejects.toThrow(/Unsupported email adapter/);
+  });
+});
+
+describe('buildMimeMessage', () => {
+  it('builds a multipart/alternative message with text and html parts', () => {
+    const raw = buildMimeMessage({
+      from: 'from@x.co',
+      to: 'to@x.co',
+      subject: 'Hi',
+      text: 'hello',
+      html: '<p>hello</p>',
+    });
+    expect(raw).toContain('From: from@x.co');
+    expect(raw).toContain('To: to@x.co');
+    expect(raw).toContain('Subject: Hi');
+    expect(raw).toContain('Content-Type: multipart/alternative');
+    expect(raw).toContain('Content-Type: text/plain');
+    expect(raw).toContain('Content-Type: text/html');
+    expect(raw).toContain('hello');
+    expect(raw).toContain('<p>hello</p>');
+    expect(raw).toMatch(/\r\n/);
+  });
+
+  it('Q-encodes non-ASCII subjects', () => {
+    const raw = buildMimeMessage({
+      from: 'a@b',
+      to: 'c@d',
+      subject: 'héllo',
+      text: 't',
+      html: '<p>t</p>',
+    });
+    expect(raw).toContain('=?UTF-8?B?');
+    expect(raw).not.toContain('Subject: héllo');
+  });
+});
+
+describe('cloudflare adapter', () => {
+  it('throws without an email binding or from address', () => {
+    expect(() =>
+      createCloudflareAdapter({ emailBinding: null, from: 'a@b' })
+    ).toThrow();
+    expect(() =>
+      createCloudflareAdapter({
+        emailBinding: { send: async () => {} },
+        from: null,
+      })
+    ).toThrow();
+  });
+
+  it('calls the binding with {from, to, raw MIME}', async () => {
+    const calls = [];
+    const binding = { send: async (msg) => calls.push(msg) };
+    const adapter = createCloudflareAdapter({
+      emailBinding: binding,
+      from: 'no-reply@acme.test',
+    });
+    await adapter.send({
+      to: 'to@x.co',
+      subject: 'Hi',
+      text: 'hello',
+      html: '<p>hello</p>',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].from).toBe('no-reply@acme.test');
+    expect(calls[0].to).toBe('to@x.co');
+    expect(calls[0].raw).toContain('Subject: Hi');
+    expect(calls[0].raw).toContain('<p>hello</p>');
+  });
+});
+
+describe('kit adapter — send', () => {
+  it('throws when constructed without an api key', () => {
+    expect(() => createKitAdapter({ apiKey: null, from: 'a@b' })).toThrow();
+  });
+
+  it('requires a from address at send time', async () => {
+    const adapter = createKitAdapter({ apiKey: 'k', from: null });
+    await expect(
+      adapter.send({ to: 'a@b.co', subject: 's', text: 't', html: '<p>t</p>' })
+    ).rejects.toThrow(/from address/);
+  });
+
+  it('POSTs to Kit with the api-key header', async () => {
+    fetchMock
+      .get('https://api.kit.com')
+      .intercept({
+        path: '/v4/broadcasts',
+        method: 'POST',
+        headers: { 'X-Kit-Api-Key': 'kit-test' },
+      })
+      .reply(201, { id: 'b_1' });
+
+    const adapter = createKitAdapter({
+      apiKey: 'kit-test',
+      from: 'no-reply@acme.test',
+    });
+    const result = await adapter.send({
+      to: 'to@x.co',
+      subject: 'Hi',
+      text: 'hello',
+      html: '<p>hello</p>',
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('throws on a non-2xx response', async () => {
+    fetchMock
+      .get('https://api.kit.com')
+      .intercept({ path: '/v4/broadcasts', method: 'POST' })
+      .reply(401, 'bad key');
+
+    const adapter = createKitAdapter({
+      apiKey: 'kit-test',
+      from: 'no-reply@acme.test',
+    });
+    await expect(
+      adapter.send({ to: 'a@b.co', subject: 's', text: 't', html: '<p>t</p>' })
+    ).rejects.toThrow(/Kit rejected the send/);
+  });
+});
+
+describe('kit adapter — syncMembership', () => {
+  it('adds a tag on action=added', async () => {
+    fetchMock
+      .get('https://api.kit.com')
+      .intercept({
+        path: '/v4/subscribers',
+        method: 'POST',
+        headers: { 'X-Kit-Api-Key': 'kit-test' },
+      })
+      .reply(201, { id: 's_1' });
+
+    const adapter = createKitAdapter({ apiKey: 'kit-test' });
+    const result = await adapter.syncMembership({
+      member: { email: 'a@b.co' },
+      plan: { name: 'Premium' },
+      action: 'added',
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('removes a tag on action=removed', async () => {
+    fetchMock
+      .get('https://api.kit.com')
+      .intercept({
+        path: `/v4/subscribers/${encodeURIComponent('a@b.co')}/tags/${encodeURIComponent('cfm:plan:Premium')}`,
+        method: 'DELETE',
+      })
+      .reply(204, '');
+
+    const adapter = createKitAdapter({ apiKey: 'kit-test' });
+    const result = await adapter.syncMembership({
+      member: { email: 'a@b.co' },
+      plan: { name: 'Premium' },
+      action: 'removed',
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it('throws on unknown action', async () => {
+    const adapter = createKitAdapter({ apiKey: 'kit-test' });
+    await expect(
+      adapter.syncMembership({
+        member: { email: 'a@b.co' },
+        plan: { name: 'Premium' },
+        action: 'weird',
+      })
+    ).rejects.toThrow(/Unsupported membership sync action/);
+  });
+
+  it('surfaces upstream errors on sync', async () => {
+    fetchMock
+      .get('https://api.kit.com')
+      .intercept({ path: '/v4/subscribers', method: 'POST' })
+      .reply(500, 'boom');
+
+    const adapter = createKitAdapter({ apiKey: 'kit-test' });
+    await expect(
+      adapter.syncMembership({
+        member: { email: 'a@b.co' },
+        plan: { name: 'Premium' },
+        action: 'added',
+      })
+    ).rejects.toThrow(/Kit tag add failed/);
   });
 });
 
