@@ -163,6 +163,7 @@ Additional adapters — Postmark, Mailgun, SendGrid, Mailchimp, others — are e
 - `MAGIC_LINKS` — token → email and intent, short TTL
 - `RECENT_PAGES` — member_id → ring buffer of last 20 URLs
 - `RATE_LIMITS` — various keys for signup throttling, magic link request throttling
+- `RULE_CACHE` — cached snapshot of the access-rule set, invalidated on admin writes
 
 This is small enough that a new contributor can hold the entire schema in their head.
 

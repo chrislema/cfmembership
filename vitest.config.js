@@ -8,7 +8,7 @@ export default defineWorkersConfig({
         miniflare: {
           compatibilityDate: '2025-09-06',
           d1Databases: ['DB'],
-          kvNamespaces: ['SESSIONS', 'MAGIC_LINKS', 'RECENT_PAGES', 'RATE_LIMITS'],
+          kvNamespaces: ['SESSIONS', 'MAGIC_LINKS', 'RECENT_PAGES', 'RATE_LIMITS', 'RULE_CACHE'],
         },
       },
     },

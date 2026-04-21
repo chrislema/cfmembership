@@ -23,6 +23,10 @@ id = "YOUR_RECENT_PAGES_KV_ID"
 binding = "RATE_LIMITS"
 id = "YOUR_RATE_LIMITS_KV_ID"
 
+[[kv_namespaces]]
+binding = "RULE_CACHE"
+id = "YOUR_RULE_CACHE_KV_ID"
+
 # Variant B — uncomment to serve a co-located static site from ./public
 # [assets]
 # directory = "./public"

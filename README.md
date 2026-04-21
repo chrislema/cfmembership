@@ -80,6 +80,7 @@ npx wrangler kv namespace create SESSIONS
 npx wrangler kv namespace create MAGIC_LINKS
 npx wrangler kv namespace create RECENT_PAGES
 npx wrangler kv namespace create RATE_LIMITS
+npx wrangler kv namespace create RULE_CACHE
 ```
 
 Copy the IDs returned by each command into `wrangler.toml`. Run the schema migration:
