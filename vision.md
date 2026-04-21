@@ -4,7 +4,7 @@
 
 CFMembership is an open-source, self-hosted membership platform built entirely on Cloudflare's developer platform. Clone it, configure your environment, run `wrangler deploy`, and you have a membership site with Stripe billing, magic-link auth, plan-based access control, and pluggable email integrations — all running on Workers, D1, and KV.
 
-It is single-tenant by design. One deployment runs one site. No SaaS layer, no multi-tenancy overhead, no vendor lock beyond Cloudflare itself.
+It is single-tenant by design. One CFMembership deployment manages one site. No SaaS layer, no multi-tenancy overhead, no vendor lock beyond Cloudflare itself.
 
 It is vanilla JavaScript, vanilla HTML, vanilla CSS. No build step required for the runtime. No React. No framework tax. The codebase should be legible to anyone who knows the web platform.
 
@@ -113,11 +113,11 @@ When a renewal fails, the member enters a three-day grace period. Access is pres
 
 ## The admin
 
-The admin is a set of authenticated routes within the Worker. It is available only to the single owner, identified by an email address configured at deploy time. The owner logs in the same way members do — magic link.
+The admin is a set of authenticated routes within the Worker. On first run, it presents a setup screen where the owner configures the install: owner email, origin mode and origin URL, Stripe credentials, and email adapter settings. After setup, it is available only to the single owner. The owner logs in the same way members do — magic link.
 
 The admin provides:
 
-- **Site configuration.** Set the origin mode — external origin URL (Variant A) or co-located assets (Variant B) — and the origin URL itself when applicable. Set the owner email. Paste the Stripe API key and webhook signing secret.
+- **Site configuration.** Set the origin mode — external origin URL (Variant A) or co-located assets (Variant B) — and the origin URL itself when applicable. Set the owner email. Paste the Stripe API key and webhook signing secret. Configure the active email adapter: Cloudflare Email, Resend, or Kit.
 - **Plans management.** Create, edit, deactivate plans. Set price, billing interval, and redirect URL per plan. Saving a plan syncs it to Stripe.
 - **Access rules management.** Define URL patterns and which plans can access them. See all rules in one view, ordered by specificity.
 - **Members list.** Paginated, searchable by email.

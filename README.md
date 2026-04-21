@@ -12,7 +12,7 @@ A self-hosted, open-source membership platform that runs entirely on Cloudflare.
 - Passwordless authentication via magic links
 - Pluggable email adapters with Cloudflare Email, Resend, and Kit included
 - A boring server-rendered admin that does not pretend to be a SaaS product
-- One deployment serves one site — no multi-tenancy, no external dependencies beyond Stripe and your chosen email provider
+- One CFMembership deployment manages one site — no multi-tenancy, and no required third-party services beyond Stripe and your chosen email provider
 
 ## Who this is for
 
@@ -86,14 +86,6 @@ Copy the IDs returned by each command into `wrangler.toml`. Run the schema migra
 npx wrangler d1 execute cfmembership --file=./schema.sql
 ```
 
-Set your secrets:
-
-```
-npx wrangler secret put OWNER_EMAIL
-npx wrangler secret put STRIPE_SECRET_KEY
-npx wrangler secret put STRIPE_WEBHOOK_SECRET
-```
-
 Deploy:
 
 ```
@@ -102,10 +94,13 @@ npx wrangler deploy
 
 Route your domain at the Worker. In the Cloudflare dashboard, under your domain's Workers Routes, add a route like `example.com/*` pointing at the `cfmembership` Worker. This makes every request to your domain flow through CFMembership first.
 
-Point Stripe's webhook endpoint at `https://your-domain/webhooks/stripe`. Visit `https://your-domain/admin`, request a magic link with your owner email, and you're in.
+Visit `https://your-domain/admin`. On first run, CFMembership presents a setup screen where you configure the site owner email, choose the site mode, paste your Stripe API key and webhook signing secret, and connect your email adapter credentials if you're using Resend or Kit.
 
 Configure your site in the admin:
 
+- **Owner account:** Set the single owner email address. That email can request a magic link to access `/admin`.
+- **Stripe:** Create an API key and webhook signing secret in Stripe, then paste them into the admin. Point Stripe's webhook endpoint at `https://your-domain/webhooks/stripe`.
+- **Email adapter:** Choose Cloudflare Email, Resend, or Kit. If you use Resend or Kit, create the API key in that service and paste it into the admin.
 - **Variant A (external origin):** Set "Origin mode" to `external` and paste your origin URL (e.g., `https://my-site.pages.dev` or wherever your site actually lives). The Worker will proxy all non-admin, non-webhook, non-auth requests to that origin.
 - **Variant B (co-located assets):** Drop your built static site into the `public/` directory, redeploy, and set "Origin mode" to `assets`. The Worker serves files directly from the asset bundle.
 
@@ -134,7 +129,7 @@ Writing a new adapter means implementing one interface in a new file under `adap
 
 ## The admin
 
-Available at `/admin`, authenticated via the same magic-link flow members use, restricted to the email in `OWNER_EMAIL`. The admin is server-rendered HTML forms. It provides:
+Available at `/admin`. On first run, it presents a setup screen. After setup, it is authenticated via the same magic-link flow members use and restricted to the configured owner email. The admin is server-rendered HTML forms. It provides:
 
 - Site configuration (origin mode and URL, Stripe keys, owner email)
 - Plans management (create, edit, deactivate; syncs to Stripe on save)
