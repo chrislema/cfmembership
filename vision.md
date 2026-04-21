@@ -34,7 +34,7 @@ The end member is someone who signs up because they hit a page they wanted to re
 
 **Cloudflare-native storage.** D1 holds the core relational data: members, plans, access rules, subscriptions, payment history. KV holds ephemeral and performance-sensitive data: active sessions, recent-page ring buffers, rate limit counters, cached rule lookups. The Worker proxies page content from a configured origin, or serves it directly from Workers Assets when the owner co-locates their site in the CFMembership deployment. No external database, no external cache, no external session store.
 
-**Pluggable email through a thin adapter contract.** Every transactional email goes through an adapter. The default is Cloudflare's outbound email feature. Resend and Kit (ConvertKit) are the other v1 adapters. The contract is minimal enough that community adapters for Postmark, Mailgun, SendGrid, or whatever else should take an afternoon to write. The Kit adapter also implements list sync so plan membership stays reflected in tags.
+**Pluggable email through a thin adapter contract.** Every transactional email goes through an adapter. The default is Cloudflare's outbound email feature. Resend and Kit (ConvertKit) are the other v1 adapters. The contract is minimal enough that community adapters for Postmark, Mailgun, SendGrid, or whatever else should take an evening to write. The Kit adapter also implements list sync so plan membership stays reflected in tags.
 
 ## Deployment topology
 
@@ -152,7 +152,7 @@ Additional adapters — Postmark, Mailgun, SendGrid, Mailchimp, others — are e
 - `members` — id, email, created_at, last_seen_at, pageview_count, status (active, canceled, banned)
 - `plans` — id, name, price_cents, interval, redirect_url, stripe_product_id, stripe_price_id, active, sort_order
 - `memberships` — member_id, plan_id, stripe_subscription_id, status, current_period_end, canceled_at, source (paid, comped)
-- `access_rules` — id, url_pattern, pattern_type (exact, prefix), sort_order
+- `access_rules` — id, url_pattern, pattern_type (exact, prefix), sort_order (tiebreaker only; specificity is derived from the pattern itself)
 - `access_rule_plans` — rule_id, plan_id (many-to-many)
 - `payments` — id, member_id, stripe_charge_id, amount_cents, status, created_at
 - `admin_config` — singleton key-value for settings (origin mode, origin URL, owner email, Stripe key, Stripe webhook secret, active email adapter, adapter config)

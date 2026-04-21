@@ -64,20 +64,22 @@ Both variants run the same Worker code. You pick the mode in the admin.
 Requirements: a Cloudflare account, a Stripe account, a domain pointed at Cloudflare, Node.js for Wrangler, and an email provider (or use the built-in Cloudflare Email adapter).
 
 ```
-git clone https://github.com/YOUR_FORK/cfmembership.git
+git clone https://github.com/chrislema/cfmembership.git
 cd cfmembership
 npm install
 cp wrangler.toml.example wrangler.toml
 ```
 
+`npm install` only installs Wrangler and its dependencies for deploying. The Worker runtime itself has no build step and ships vanilla JS.
+
 Edit `wrangler.toml` to set your account ID, the domain you're deploying to, and the names of your D1 and KV bindings. Then:
 
 ```
 npx wrangler d1 create cfmembership
-npx wrangler kv:namespace create SESSIONS
-npx wrangler kv:namespace create MAGIC_LINKS
-npx wrangler kv:namespace create RECENT_PAGES
-npx wrangler kv:namespace create RATE_LIMITS
+npx wrangler kv namespace create SESSIONS
+npx wrangler kv namespace create MAGIC_LINKS
+npx wrangler kv namespace create RECENT_PAGES
+npx wrangler kv namespace create RATE_LIMITS
 ```
 
 Copy the IDs returned by each command into `wrangler.toml`. Run the schema migration:
@@ -115,7 +117,7 @@ Rules are URL patterns paired with allowed plans.
 
 When multiple rules match, the most specific one wins: exact beats prefix, longer prefix beats shorter prefix. Unmatched URLs are public.
 
-A rule can allow multiple plans. A member holding any of the allowed plans gets access. Members without access are redirected to the first allowed plan's redirect URL — which you built as a sales page for that plan.
+A rule can allow multiple plans. A member holding any of the allowed plans gets access. Members without access are redirected to the redirect URL of the first allowed plan, where "first" is determined by the plan's sort order in the admin — which you built as a sales page for that plan.
 
 ## Email adapters
 
@@ -126,6 +128,8 @@ Three adapters ship in v1:
 - **Kit (ConvertKit)** — sends transactional email through Kit and keeps Kit tags in sync with plan membership, so your broadcast segments update automatically when members join, switch, or cancel plans.
 
 Writing a new adapter means implementing one interface in a new file under `adapters/email/` and registering it in configuration. See `docs/adapters.md` for the contract and a reference implementation.
+
+Member-facing email templates (magic link, welcome, payment receipt, payment-failed reminders, access-revoked notification) are owner-editable per install, so you can localize or rewrite them without forking.
 
 ## The admin
 
