@@ -8,7 +8,7 @@ export async function route(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname;
 
-  if (path === '/setup' || path.startsWith('/setup/')) {
+  if (path === '/setup') {
     return handleSetup(request, env, ctx);
   }
   if (path === '/admin' || path.startsWith('/admin/')) {

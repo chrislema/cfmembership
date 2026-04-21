@@ -14,12 +14,13 @@ describe('request router', () => {
   it('dispatches /setup to the setup handler', async () => {
     const res = await SELF.fetch('https://example.com/setup');
     expect(res.status).toBe(200);
-    expect(await body(res)).toBe('cfmembership:setup');
+    const html = await res.text();
+    expect(html).toContain('Set up CFMembership');
   });
 
-  it('dispatches /setup/sub-path to the setup handler', async () => {
-    const res = await SELF.fetch('https://example.com/setup/email');
-    expect(await body(res)).toBe('cfmembership:setup');
+  it('does not reserve /setup subpaths — they fall through to the proxy', async () => {
+    const res = await SELF.fetch('https://example.com/setup/anything');
+    expect(res.status).toBe(503);
   });
 
   it('dispatches /admin to the admin handler', async () => {
