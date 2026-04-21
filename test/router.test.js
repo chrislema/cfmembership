@@ -24,13 +24,19 @@ describe('request router', () => {
   });
 
   it('dispatches /admin to the admin handler', async () => {
-    const res = await SELF.fetch('https://example.com/admin');
-    expect(await body(res)).toBe('cfmembership:admin');
+    const res = await SELF.fetch('https://example.com/admin', {
+      redirect: 'manual',
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/setup');
   });
 
   it('dispatches /admin/members to the admin handler', async () => {
-    const res = await SELF.fetch('https://example.com/admin/members');
-    expect(await body(res)).toBe('cfmembership:admin');
+    const res = await SELF.fetch('https://example.com/admin/members', {
+      redirect: 'manual',
+    });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('location')).toBe('/setup');
   });
 
   it('dispatches /auth/* to the auth handler', async () => {
