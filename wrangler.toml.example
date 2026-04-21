@@ -1,0 +1,29 @@
+name = "cfmembership"
+main = "src/index.js"
+compatibility_date = "2025-09-06"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cfmembership"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[[kv_namespaces]]
+binding = "SESSIONS"
+id = "YOUR_SESSIONS_KV_ID"
+
+[[kv_namespaces]]
+binding = "MAGIC_LINKS"
+id = "YOUR_MAGIC_LINKS_KV_ID"
+
+[[kv_namespaces]]
+binding = "RECENT_PAGES"
+id = "YOUR_RECENT_PAGES_KV_ID"
+
+[[kv_namespaces]]
+binding = "RATE_LIMITS"
+id = "YOUR_RATE_LIMITS_KV_ID"
+
+# Variant B — uncomment to serve a co-located static site from ./public
+# [assets]
+# directory = "./public"
+# binding = "ASSETS"
