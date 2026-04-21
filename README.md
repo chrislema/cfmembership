@@ -5,6 +5,8 @@ A self-hosted, open-source membership platform that runs entirely on Cloudflare.
 ## What you get
 
 - A membership site you own end to end, running on Cloudflare Workers
+- A reverse proxy that fronts your existing site — no migration, no content changes, your site keeps working
+- Server-side access enforcement that cannot be bypassed by disabling JavaScript or using curl
 - Stripe-hosted checkout with recurring subscriptions, upgrades, downgrades, and grace periods
 - URL-based access rules that work with any content system that produces URLs
 - Passwordless authentication via magic links
@@ -18,17 +20,41 @@ You already have a website, or know how to build one. You want to put some of it
 
 ## How it works
 
-CFMembership sits in front of your site as a routing layer on Cloudflare Workers. It does not care how your content is authored — static HTML, a static site generator, a headless CMS, a markdown repo. It only cares about URLs.
+CFMembership runs as a reverse proxy on Cloudflare Workers. Your domain points at the Worker, and every request flows through it. For each request, the Worker checks if the URL is protected, checks the visitor's session, and either proxies the request to your origin (for public pages or authorized members) or redirects to a sales page (for visitors without access).
 
-You define access rules in the admin: "the prefix `/members/premium/*` requires the Premium or Founder plan." When a request comes in, the Worker matches the URL against your rules, checks the requester's session, and either serves the page or redirects to the sales page for the required plan. The most-specific matching rule wins, so you can protect a category prefix and override individual URLs under it.
+```
+┌─────────┐     ┌──────────────────────┐     ┌─────────────┐
+│ Visitor │ ──▶ │ CFMembership Worker  │ ──▶ │   Origin    │
+└─────────┘     │                      │     │  (your site)│
+                │ • match access rule  │     └─────────────┘
+                │ • check session      │
+                │ • allow / redirect   │
+                │ • proxy to origin    │
+                └──────────────────────┘
+```
+
+It does not care how your content is authored — static HTML, a static site generator, a headless CMS, a markdown repo. It only cares about URLs. Your existing site keeps working exactly as it did; CFMembership sits in front of it and decides what's visible to whom.
+
+Enforcement is server-side. The Worker decides before a single byte of protected content leaves the origin. Disabling JavaScript, viewing source, or using curl cannot bypass a paywall — the content was never sent.
+
+You define access rules in the admin: "the prefix `/members/premium/*` requires the Premium or Founder plan." When a request comes in, the Worker matches the URL against your rules, checks the requester's session, and either proxies the page or redirects to the sales page for the required plan. The most-specific matching rule wins, so you can protect a category prefix and override individual URLs under it.
 
 Prospects convert by hitting a paywall, reading the pitch page you wrote, clicking through to Stripe Checkout, and paying. The Stripe webhook provisions their account. A magic link arrives in their inbox. They click it and they are in.
 
+### Two deployment variants
+
+**Variant A — External origin (default).** Your site lives wherever it lives today — Cloudflare Pages, Netlify, Vercel, a VPS, an S3 bucket — and you point CFMembership at it. The Worker proxies requests to your origin. Use this if you already have a site, or if your content comes from a CMS or static site generator.
+
+**Variant B — Co-located assets.** Drop your built static site into the `public/` directory of the CFMembership repo. `wrangler deploy` ships both the membership logic and the site together, served from Workers Assets. Use this if your content is simple — markdown-in-a-repo or hand-authored HTML — and you want one deployment for everything.
+
+Both variants run the same Worker code. You pick the mode in the admin.
+
 ## Stack
 
-- **Cloudflare Workers** — routing, access control, admin, webhook processing
+- **Cloudflare Workers** — routing, access control, reverse proxy, admin, webhook processing
 - **Cloudflare D1** — members, plans, access rules, subscriptions, payment history
-- **Cloudflare KV** — sessions, magic link tokens, recent-page ring buffers, rate limits
+- **Cloudflare KV** — sessions, magic link tokens, recent-page ring buffers, rate limits, rule cache
+- **Cloudflare Workers Assets** — optional, for co-located static sites (Variant B)
 - **Cloudflare Email** — default outbound email (swappable)
 - **Stripe** — billing, subscriptions, checkout
 - **Vanilla JS, HTML, CSS** — no build step, no framework
@@ -38,8 +64,8 @@ Prospects convert by hitting a paywall, reading the pitch page you wrote, clicki
 Requirements: a Cloudflare account, a Stripe account, a domain pointed at Cloudflare, Node.js for Wrangler, and an email provider (or use the built-in Cloudflare Email adapter).
 
 ```
-git clone https://github.com/YOUR_FORK/cfmemberships.git
-cd cfmemberships
+git clone https://github.com/YOUR_FORK/cfmembership.git
+cd cfmembership
 npm install
 cp wrangler.toml.example wrangler.toml
 ```
@@ -74,7 +100,16 @@ Deploy:
 npx wrangler deploy
 ```
 
-Point Stripe's webhook endpoint at `https://your-domain/webhooks/stripe`. Visit `https://your-domain/admin`, request a magic link with your owner email, and you're in. Create your first plan, add an access rule, and you have a membership site.
+Route your domain at the Worker. In the Cloudflare dashboard, under your domain's Workers Routes, add a route like `example.com/*` pointing at the `cfmembership` Worker. This makes every request to your domain flow through CFMembership first.
+
+Point Stripe's webhook endpoint at `https://your-domain/webhooks/stripe`. Visit `https://your-domain/admin`, request a magic link with your owner email, and you're in.
+
+Configure your site in the admin:
+
+- **Variant A (external origin):** Set "Origin mode" to `external` and paste your origin URL (e.g., `https://my-site.pages.dev` or wherever your site actually lives). The Worker will proxy all non-admin, non-webhook, non-auth requests to that origin.
+- **Variant B (co-located assets):** Drop your built static site into the `public/` directory, redeploy, and set "Origin mode" to `assets`. The Worker serves files directly from the asset bundle.
+
+Create your first plan, add an access rule, and you have a membership site.
 
 ## Access rules
 
@@ -101,6 +136,7 @@ Writing a new adapter means implementing one interface in a new file under `adap
 
 Available at `/admin`, authenticated via the same magic-link flow members use, restricted to the email in `OWNER_EMAIL`. The admin is server-rendered HTML forms. It provides:
 
+- Site configuration (origin mode and URL, Stripe keys, owner email)
 - Plans management (create, edit, deactivate; syncs to Stripe on save)
 - Access rules management
 - Members list with search
